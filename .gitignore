@@ -1,0 +1,54 @@
+# MikuMiku プロジェクト用 .gitignore ファイル
+
+# システム関連ファイル
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# エディタ関連
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ログファイル
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 一時ファイルおよびディレクトリ
+/tmp/
+/temp/
+
+# ノードモジュール（必要に応じて）
+/node_modules/
+
+# ビルド生成物（存在する場合）
+/dist/
+/build/
+
+# 環境変数ファイル
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# MMD関連で通常無視すべきもの
+# 大きなモデルファイルやテクスチャ（必要に応じてコメント解除）
+# *.pmx
+# *.pmd
+# *.vmd
+# /textures/
+
+# バックアップファイル
+*.bak
+
+# その他プロジェクト固有の無視すべきファイル
+*.zip
+*.rar
+*.tar.gz 
+
+.specstory

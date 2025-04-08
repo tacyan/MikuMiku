@@ -1,0 +1,1967 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ミクダンスシステム</title>
+    
+    <!-- ライブラリのプリロード - 優先的に読み込みを開始 -->
+    <link rel="preload" href="libs/three.min.js" as="script">
+    <link rel="preload" href="libs/mmdparser.min.js" as="script">
+    <link rel="preload" href="libs/MMDLoader.js" as="script">
+    <link rel="preload" href="libs/MMDAnimationHelper.js" as="script">
+    
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #f0f0f0;
+            font-family: "メイリオ", Meiryo, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #loading-spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            z-index: 100;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            margin: 4px 2px;
+        }
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-size: 14px;
+            z-index: 100;
+        }
+        #debug-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-size: 12px;
+            max-width: 300px;
+            max-height: 300px;
+            overflow: auto;
+            z-index: 100;
+            display: none;
+        }
+        .checkbox-container {
+            display: inline-block;
+            margin: 4px 2px;
+            vertical-align: middle;
+        }
+        #ammo-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-left: 10px;
+            font-size: 12px;
+            background-color: #ff9800;
+        }
+        #ammo-status.ready {
+            background-color: #4CAF50;
+        }
+        #ammo-status.error {
+            background-color: #f44336;
+        }
+        #error-container {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            right: 20px;
+            background: rgba(255, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            display: none;
+            z-index: 1001;
+        }
+        #error-details {
+            margin-top: 10px;
+            font-size: 12px;
+            max-height: 100px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px;
+            border-radius: 3px;
+        }
+        #reload-btn {
+            background-color: #f44336;
+            margin-top: 10px;
+        }
+        #loading-text {
+            text-align: center;
+            max-width: 80%;
+        }
+        #fallback-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #f0f0f0;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        #stage-indicator {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 999;
+        }
+        #recovery-options {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div id="loading-spinner"></div>
+        <div id="loading-text">初期化中...</div>
+        <div id="stage-indicator">準備中...</div>
+        <button id="reload-btn" style="display: none;">ページを再読み込み</button>
+    </div>
+    
+    <div id="status">ステータス: 初期化中...</div>
+    
+    <div id="error-container">
+        <div id="error-message"></div>
+        <div id="error-details"></div>
+        <div id="recovery-options">
+            <button id="retry-libraries-btn">ライブラリ再読み込み</button>
+            <button id="use-fallback-btn">簡易モードで表示</button>
+            <button id="reload-page-btn">ページを再読み込み</button>
+        </div>
+    </div>
+    
+    <div id="fallback-container">
+        <h2>ミクダンスシステム - 簡易モード</h2>
+        <p>標準モードの読み込みに失敗しました。簡易モードで表示しています。</p>
+        <img src="models/miku_preview.jpg" alt="初音ミク" style="max-width: 300px; margin: 20px 0;">
+        <button id="retry-full-version">標準モードを再試行</button>
+    </div>
+    
+    <div id="controls">
+        <div>
+            <button id="danceButton">ダンス開始</button>
+            <select id="motionSelect">
+                <option value="idle">待機</option>
+                <option value="test">テスト回転</option>
+                <!-- モーションファイルを追加したら、ここにオプションを追加します -->
+            </select>
+            <button id="toggleDebug">デバッグ表示</button>
+        </div>
+        <div style="margin-top: 8px;">
+            <div class="checkbox-container">
+                <input type="checkbox" id="disable-physics" name="disable-physics">
+                <label for="disable-physics">物理演算を無効化</label>
+            </div>
+            <div id="ammo-status">初期化中...</div>
+            <button id="force-init-ammo" style="padding: 3px 8px; font-size: 12px;">物理エンジン初期化</button>
+        </div>
+    </div>
+    
+    <div id="debug-panel">
+        <h3>デバッグ情報</h3>
+        <div id="debug-info"></div>
+    </div>
+    
+    <!-- 初期化スクリプト - 最初に実行されるべき -->
+    <script>
+        // アプリケーション設定
+        const APP_CONFIG = {
+            DEBUG: true,                       // デバッグモード
+            TIMEOUT_MS: 20000,                 // 初期化タイムアウト (ミリ秒)
+            LIBRARIES: {                        // ライブラリ設定
+                THREE: {
+                    IGNORE_LOCAL: false,       // ローカルファイルを無視して常にCDNから読み込む
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js",
+                    LOCAL_PATH: "js/libs/three.min.js"
+                },
+                MMD_PARSER: {
+                    IGNORE_LOCAL: true,        // ローカルファイルを無視
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/libs/mmdparser.min.js",
+                    LOCAL_PATH: "js/libs/mmdparser.min.js"
+                },
+                MMD_LOADER: {
+                    IGNORE_LOCAL: true,        // ローカルファイルを無視
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/MMDLoader.js",
+                    LOCAL_PATH: "js/libs/MMDLoader.js"
+                },
+                MMD_ANIMATION_HELPER: {
+                    IGNORE_LOCAL: true,        // ローカルファイルを無視
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/animation/MMDAnimationHelper.js",
+                    LOCAL_PATH: "js/libs/MMDAnimationHelper.js"
+                },
+                TGA_LOADER: {
+                    IGNORE_LOCAL: true,
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/TGALoader.js",
+                    LOCAL_PATH: "js/libs/TGALoader.js"
+                },
+                ORBIT_CONTROLS: {
+                    IGNORE_LOCAL: true,
+                    CDN_URL: "https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js",
+                    LOCAL_PATH: "js/libs/OrbitControls.js"
+                }
+            }
+        };
+        
+        // 古いCDN_URLSとの互換性のため
+        const CDN_URLS = {
+            three: APP_CONFIG.LIBRARIES.THREE.CDN_URL,
+            mmdparser: APP_CONFIG.LIBRARIES.MMD_PARSER.CDN_URL,
+            mmdloader: APP_CONFIG.LIBRARIES.MMD_LOADER.CDN_URL,
+            mmdanimationhelper: APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.CDN_URL,
+            tgaloader: APP_CONFIG.LIBRARIES.TGA_LOADER.CDN_URL,
+            orbitcontrols: APP_CONFIG.LIBRARIES.ORBIT_CONTROLS.CDN_URL
+        };
+        
+        // グローバルからアクセスできるようにする
+        window.APP_CONFIG = APP_CONFIG;
+        window.CDN_URLS = CDN_URLS;
+        
+        // アプリケーション状態
+        const APP_STATE = {
+            libsLoaded: {
+                three: false,          // THREE.jsライブラリ
+                mmdparser: false,      // MMDParser
+                mmdloader: false,      // MMDLoader
+                mmdanimationhelper: false, // MMDAnimationHelper
+                tgaloader: false,      // TGALoader
+                orbitcontrols: false   // OrbitControls
+            },
+            initStarted: false,        // 初期化開始フラグ
+            initCompleted: false,      // 初期化完了フラグ
+            isInitializing: false,     // 初期化処理中フラグ
+            loadErrors: [],            // エラーを保存する配列
+            loadProgress: {}           // 読み込み進捗
+        };
+        
+        // グローバルアクセスのためwindowオブジェクトに設定
+        window.APP_STATE = APP_STATE;
+        
+        // グローバル変数へのショートカット設定 - 重複宣言を避けるため確認してから定義
+        if (typeof window.isInitializing === 'undefined') {
+            Object.defineProperty(window, 'isInitializing', {
+                get: function() { return APP_STATE.isInitializing || false; },
+                set: function(value) { APP_STATE.isInitializing = Boolean(value); }
+            });
+        }
+        
+        // isInitializing状態を取得・設定するグローバル関数
+        window.getIsInitializing = function() { return window.isInitializing; };
+        window.setIsInitializing = function(value) { window.isInitializing = Boolean(value); };
+        
+        // グローバル変数の初期化
+        window.appInitialized = false;
+        window.threeJSReady = false;
+        window.mmdReady = false;
+        window.librariesLoaded = false;
+        window.initRetryCount = 0;
+        
+        // ステージ表示を更新
+        function updateStage(stage, max) {
+            const stageIndicator = document.getElementById('stage-indicator');
+            if (stageIndicator) {
+                APP_STATE.currentStage = stage;
+                APP_STATE.maxStage = max || APP_STATE.maxStage;
+                stageIndicator.textContent = `ステージ ${stage}/${max}`;
+            }
+        }
+        
+        // エラー詳細を表示
+        function showErrorDetails(details) {
+            const errorDetails = document.getElementById('error-details');
+            if (errorDetails) {
+                errorDetails.style.display = 'block';
+                errorDetails.textContent = details;
+            }
+        }
+        
+        // エラーメッセージを表示する関数
+        function showErrorMessage(title, message) {
+            try {
+                // エラーメッセージをコンソールにも出力
+                console.error('エラー:', title, message || '');
+                
+                // エラーコンテナを取得
+                const errorContainer = document.getElementById('error-container');
+                if (!errorContainer) {
+                    console.error('エラーコンテナが見つかりません');
+                    return;
+                }
+                
+                // エラータイトルとメッセージを設定
+                const errorTitle = document.getElementById('error-title');
+                const errorMessage = document.getElementById('error-message');
+                
+                if (errorTitle) {
+                    errorTitle.textContent = title || 'エラーが発生しました';
+                }
+                
+                if (errorMessage) {
+                    errorMessage.textContent = message || '';
+                }
+                
+                // エラーコンテナを表示
+                errorContainer.style.display = 'flex';
+                
+                // デバッグパネルにも情報を追加（存在する場合）
+                if (window.APP_STATE && window.APP_STATE.loadErrors) {
+                    // 配列が存在することを確認してからpush
+                    window.APP_STATE.loadErrors.push(title);
+                } else if (window.APP_STATE) {
+                    // 配列が存在しない場合は作成
+                    window.APP_STATE.loadErrors = [title];
+                }
+                
+                // デバッグ情報にも追加
+                addDebugInfo(`エラー: ${title}`);
+                if (message) {
+                    addDebugInfo(`詳細: ${message}`);
+                }
+            } catch (e) {
+                // エラー処理中のエラーもコンソールに出力
+                console.error('エラー表示中にエラーが発生しました:', e);
+            }
+        }
+        
+        // グローバルエラーハンドラ - すべての未捕捉エラーをキャッチ
+        window.onerror = function(message, source, line, column, error) {
+            try {
+                console.error('グローバルエラー:', message, source, line, column);
+                
+                // app.jsのエラーは特に処理
+                if (source && source.includes('app.js')) {
+                    showErrorMessage('アプリケーションエラー', `${message} - ソース: ${source}, 行: ${line}`);
+                } else {
+                    showErrorMessage('エラーが発生しました', message);
+                }
+                
+                // エラーがあっても初期化は続行
+                if (!window.appInitialized && document.getElementById('loading').style.display !== 'none') {
+                    setTimeout(hideLoadingScreen, 3000);
+                }
+                
+                // デフォルトのエラー処理を継続
+                return false;
+            } catch (e) {
+                // エラーハンドラ内のエラーをコンソールに出力するのみ
+                console.error('エラーハンドラでエラーが発生:', e);
+                return false;
+            }
+        };
+        
+        // ステータス更新用関数
+        window.updateStatus = function(message) {
+            const statusElem = document.getElementById('status');
+            if (statusElem) {
+                statusElem.textContent = 'ステータス: ' + message;
+            }
+        };
+        
+        // ローディングテキスト更新
+        window.updateLoadingText = function(message) {
+            const loadingText = document.getElementById('loading-text');
+            if (loadingText) {
+                loadingText.textContent = message;
+            }
+        };
+        
+        // Ammoステータス更新用関数
+        window.updateAmmoStatus = function(state, message) {
+            const ammoStatus = document.getElementById('ammo-status');
+            if (ammoStatus) {
+                ammoStatus.textContent = message;
+                ammoStatus.className = '';
+                if (state === 'ready') {
+                    ammoStatus.classList.add('ready');
+                } else if (state === 'error') {
+                    ammoStatus.classList.add('error');
+                }
+            }
+        };
+        
+        // デバッグ情報追加用関数
+        window.addDebugInfo = function(message) {
+            const debugInfo = document.getElementById('debug-info');
+            if (debugInfo) {
+                const timestamp = new Date().toLocaleTimeString();
+                debugInfo.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                debugInfo.scrollTop = debugInfo.scrollHeight;
+            }
+            console.log(`[DEBUG] ${message}`);
+        };
+        
+        // 破損したローカルファイルや問題のあるファイルを完全に無視するためのフラグ
+        const IGNORE_LOCAL_FILES = {
+            mmdparser: true,  // mmdparser.min.jsのローカルファイルは無視する
+            mmdloader: true,  // MMDLoader.jsのローカルファイルも無視する
+            mmdanimationhelper: true  // MMDAnimationHelper.jsのローカルファイルも無視する
+        };
+        
+        // ライブラリのロード（CDNを優先的に使用するように変更）
+        async function loadLibraries() {
+            addDebugInfo('ライブラリ読み込み開始 - CDN優先モード');
+            
+            try {
+                // THREE本体を最初に読み込む
+                if (!APP_STATE.libsLoaded.three) {
+                    addDebugInfo('Three.js本体を読み込み中...');
+                    await loadLibrary(APP_CONFIG.LIBRARIES.THREE.LOCAL_PATH, APP_CONFIG.LIBRARIES.THREE.CDN_URL, 'three', false);
+                    
+                    // THREE本体が正しく読み込まれたことを確認
+                    if (typeof THREE === 'undefined') {
+                        addDebugInfo('THREE本体の読み込みに失敗しました。CDNから直接再試行します');
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            script.src = APP_CONFIG.LIBRARIES.THREE.CDN_URL;
+                            script.onload = () => {
+                                APP_STATE.libsLoaded.three = true;
+                                addDebugInfo('THREE本体をCDNから直接ロードしました');
+                                resolve();
+                            };
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        }).catch(err => {
+                            addDebugInfo('THREE本体の読み込みに再度失敗しました');
+                            throw new Error('THREE本体のロードに失敗');
+                        });
+                    }
+                }
+                
+                // THREEオブジェクトの存在を確認
+                if (typeof THREE === 'undefined') {
+                    addDebugInfo('THREE本体が見つかりません。スタブを作成します');
+                    createThreeStub();
+                }
+                
+                // MMDParser - 特に重要なので強制的にCDNから読み込む
+                addDebugInfo('MMDParserをCDNから直接ロードします');
+                // 既存のスクリプトタグがあれば削除（競合防止）
+                const existingParserScripts = document.querySelectorAll('script[src*="mmdparser"], script[id="mmdparser-script"]');
+                existingParserScripts.forEach(script => {
+                    script.parentNode.removeChild(script);
+                    addDebugInfo('既存のMMDParserスクリプトタグを削除しました');
+                });
+                
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = APP_CONFIG.LIBRARIES.MMD_PARSER.CDN_URL;
+                    script.id = 'mmdparser-script';
+                    script.async = false;
+                    script.onload = () => {
+                        addDebugInfo('MMDParserのCDNロードに成功しました');
+                        APP_STATE.libsLoaded.mmdparser = true;
+                        
+                        // グローバルのMMDParserオブジェクトをTHREEに設定
+                        if (typeof MMDParser !== 'undefined' && typeof THREE !== 'undefined') {
+                            THREE.MMDParser = MMDParser;
+                            addDebugInfo('MMDParserをTHREE.MMDParserに設定しました');
+                        } else {
+                            addDebugInfo('警告: MMDParserがグローバルに見つかりません');
+                        }
+                        
+                        resolve();
+                    };
+                    script.onerror = (err) => {
+                        addDebugInfo('MMDParserのCDNロードに失敗: ' + (err && err.message ? err.message : '不明なエラー'));
+                        reject(new Error('MMDParserのロードに失敗'));
+                    };
+                    document.head.appendChild(script);
+                }).catch(err => {
+                    addDebugInfo('MMDParserのロードに失敗。スタブを作成します');
+                    createMMDParserStub();
+                });
+                
+                // MMDParserが正しく読み込まれたことを確認
+                if (!APP_STATE.libsLoaded.mmdparser) {
+                    addDebugInfo('MMDParserのロードに問題があります。スタブで対応します');
+                    createMMDParserStub();
+                }
+                
+                // 少し待ってから次のライブラリをロード（依存関係の問題を避けるため）
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // TGALoader
+                if (!APP_STATE.libsLoaded.tgaloader) {
+                    addDebugInfo('TGALoaderをロード中...');
+                    await loadLibrary(APP_CONFIG.LIBRARIES.MMD_LOADER.LOCAL_PATH, APP_CONFIG.LIBRARIES.MMD_LOADER.CDN_URL, 'tgaloader', false);
+                }
+                
+                // OrbitControls
+                if (!APP_STATE.libsLoaded.orbitcontrols) {
+                    addDebugInfo('OrbitControlsをロード中...');
+                    await loadLibrary(APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.LOCAL_PATH, APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.CDN_URL, 'orbitcontrols', false);
+                }
+                
+                // 少し待ってから次のライブラリをロード
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // MMDLoader（MMDParserに依存）- 強制的にCDNからロード
+                addDebugInfo('MMDLoaderをCDNから直接ロード中...');
+                
+                // 既存のMMDLoaderスクリプトを削除（競合防止）
+                const existingLoaderScripts = document.querySelectorAll('script[src*="MMDLoader"], script[id="mmdloader-script"]');
+                existingLoaderScripts.forEach(script => {
+                    script.parentNode.removeChild(script);
+                    addDebugInfo('既存のMMDLoaderスクリプトを削除しました');
+                });
+                
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = APP_CONFIG.LIBRARIES.MMD_LOADER.CDN_URL;
+                    script.id = 'mmdloader-script';
+                    script.async = false;
+                    script.onload = () => {
+                        addDebugInfo('MMDLoaderのCDNロードに成功しました');
+                        APP_STATE.libsLoaded.mmdloader = true;
+                        
+                        // THREE.MMDLoaderが存在するか確認
+                        if (typeof THREE !== 'undefined' && typeof THREE.MMDLoader === 'function') {
+                            addDebugInfo('THREE.MMDLoaderの存在を確認しました');
+                        } else {
+                            addDebugInfo('警告: THREE.MMDLoaderが見つかりません');
+                            // スタブを作成
+                            if (typeof THREE !== 'undefined') {
+                                THREE.MMDLoader = function() {
+                                    this.load = function(path, onLoad) {
+                                        setTimeout(() => onLoad({}), 100);
+                                    };
+                                    this.loadAnimation = function(path, mesh, onLoad) {
+                                        setTimeout(() => onLoad({}), 100);
+                                    };
+                                };
+                                addDebugInfo('THREE.MMDLoaderスタブを作成しました');
+                            }
+                        }
+                        
+                        resolve();
+                    };
+                    script.onerror = () => {
+                        addDebugInfo('MMDLoaderのCDNロードに失敗');
+                        reject(new Error('MMDLoaderのロードに失敗'));
+                    };
+                    document.head.appendChild(script);
+                }).catch(err => {
+                    addDebugInfo('MMDLoaderのロードに失敗。別のCDNを試みます');
+                    
+                    // 別のCDNを試す
+                    return new Promise((resolve, reject) => {
+                        const backupUrl = 'https://cdn.skypack.dev/three@0.137.0/examples/js/loaders/MMDLoader.js';
+                        const script = document.createElement('script');
+                        script.src = backupUrl;
+                        script.async = false;
+                        script.onload = () => {
+                            addDebugInfo('MMDLoaderの代替CDNロードに成功');
+                            APP_STATE.libsLoaded.mmdloader = true;
+                            resolve();
+                        };
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    }).catch(() => {
+                        addDebugInfo('MMDLoaderの代替CDNも失敗。スタブを使用します');
+                        if (typeof THREE !== 'undefined') {
+                            THREE.MMDLoader = function() {
+                                this.load = function(path, onLoad) {
+                                    setTimeout(() => onLoad({}), 100);
+                                };
+                                this.loadAnimation = function(path, mesh, onLoad) {
+                                    setTimeout(() => onLoad({}), 100);
+                                };
+                            };
+                            APP_STATE.libsLoaded.mmdloader = true;
+                            addDebugInfo('MMDLoaderスタブを作成しました');
+                        }
+                    });
+                });
+                
+                // 少し待ってから次のライブラリをロード
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // MMDAnimationHelper（MMDLoaderに依存）- 強制的にCDNからロード
+                addDebugInfo('MMDAnimationHelperをCDNから直接ロード中...');
+                
+                // 既存のMMDAnimationHelperスクリプトを削除（競合防止）
+                const existingHelperScripts = document.querySelectorAll('script[src*="MMDAnimationHelper"], script[id="mmdanimationhelper-script"]');
+                existingHelperScripts.forEach(script => {
+                    script.parentNode.removeChild(script);
+                    addDebugInfo('既存のMMDAnimationHelperスクリプトを削除しました');
+                });
+                
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.CDN_URL;
+                    script.id = 'mmdanimationhelper-script';
+                    script.async = false;
+                    script.onload = () => {
+                        addDebugInfo('MMDAnimationHelperのCDNロードに成功しました');
+                        APP_STATE.libsLoaded.mmdanimationhelper = true;
+                        
+                        // THREE.MMDAnimationHelperが存在するか確認
+                        if (typeof THREE !== 'undefined' && typeof THREE.MMDAnimationHelper === 'function') {
+                            addDebugInfo('THREE.MMDAnimationHelperの存在を確認しました');
+                        } else {
+                            addDebugInfo('警告: THREE.MMDAnimationHelperが見つかりません');
+                            // スタブを作成
+                            if (typeof THREE !== 'undefined') {
+                                THREE.MMDAnimationHelper = function() {
+                                    this.add = function() { return this; };
+                                    this.remove = function() { return this; };
+                                    this.update = function() {};
+                                };
+                                addDebugInfo('THREE.MMDAnimationHelperスタブを作成しました');
+                            }
+                        }
+                        
+                        resolve();
+                    };
+                    script.onerror = () => {
+                        addDebugInfo('MMDAnimationHelperのCDNロードに失敗');
+                        reject(new Error('MMDAnimationHelperのロードに失敗'));
+                    };
+                    document.head.appendChild(script);
+                }).catch(err => {
+                    addDebugInfo('MMDAnimationHelperのロードに失敗。別のCDNを試みます');
+                    
+                    // 別のCDNを試す
+                    return new Promise((resolve, reject) => {
+                        const backupUrl = 'https://cdn.skypack.dev/three@0.137.0/examples/js/animation/MMDAnimationHelper.js';
+                        const script = document.createElement('script');
+                        script.src = backupUrl;
+                        script.async = false;
+                        script.onload = () => {
+                            addDebugInfo('MMDAnimationHelperの代替CDNロードに成功');
+                            APP_STATE.libsLoaded.mmdanimationhelper = true;
+                            resolve();
+                        };
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    }).catch(() => {
+                        addDebugInfo('MMDAnimationHelperの代替CDNも失敗。スタブを使用します');
+                        if (typeof THREE !== 'undefined') {
+                            THREE.MMDAnimationHelper = function() {
+                                this.add = function() { return this; };
+                                this.remove = function() { return this; };
+                                this.update = function() {};
+                            };
+                            APP_STATE.libsLoaded.mmdanimationhelper = true;
+                            addDebugInfo('MMDAnimationHelperスタブを作成しました');
+                        }
+                    });
+                });
+                
+                // 最終確認 - 必要なライブラリが全てロードされたか
+                const allLibsLoaded = 
+                    APP_STATE.libsLoaded.three && 
+                    APP_STATE.libsLoaded.mmdparser && 
+                    APP_STATE.libsLoaded.mmdloader && 
+                    APP_STATE.libsLoaded.mmdanimationhelper;
+                
+                addDebugInfo(`ライブラリロード完了 - 状態: ${allLibsLoaded ? '成功' : '一部失敗'}`);
+                return allLibsLoaded;
+            } catch (error) {
+                addDebugInfo(`ライブラリロード中に例外が発生: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // MMDParserスタブを作成する関数
+        function createMMDParserStub() {
+            addDebugInfo('MMDParserスタブを作成します');
+            try {
+                // インラインでMMDParserスタブを作成
+                const stubScript = document.createElement('script');
+                stubScript.text = `
+                    // MMDParserの最小限のスタブ
+                    window.MMDParser = {
+                        parseVmd: function() { return {}; },
+                        parsePmd: function() { return {}; },
+                        parsePmx: function() { return {}; }
+                    };
+                    
+                    // THREE.MMDParserとしても利用可能にする
+                    if (typeof THREE !== 'undefined') {
+                        THREE.MMDParser = window.MMDParser;
+                    }
+                    
+                    console.log('MMDParserスタブを作成しました');
+                `;
+                document.head.appendChild(stubScript);
+                
+                // 状態を更新
+                APP_STATE.libsLoaded.mmdparser = true;
+                addDebugInfo('MMDParserスタブを適用しました');
+                
+                return true;
+            } catch (error) {
+                addDebugInfo(`MMDParserスタブの作成に失敗: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // ライブラリ個別のロード関数
+        async function loadLibrary(localPath, cdnPath, libName, tryLocal = true) {
+            try {
+                // ローカルファイルを無視すべきかチェック
+                if (IGNORE_LOCAL_FILES[libName]) {
+                    tryLocal = false;
+                    addDebugInfo(`${libName}のローカルファイルはスキップします（無視設定）`);
+                }
+                
+                // まずCDNから試行（ローカルファイルが破損している可能性があるため）
+                addDebugInfo(`${libName}をCDNから読み込みます`);
+                
+                // CDNからのロード
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = cdnPath;
+                    script.async = false;
+                    script.id = `${libName}-script`;
+                    script.onload = () => {
+                        addDebugInfo(`${libName}をCDNから正常に読み込みました`);
+                        APP_STATE.libsLoaded[libName] = true;
+                        resolve();
+                    };
+                    script.onerror = () => {
+                        addDebugInfo(`${libName}のCDNからの読み込みに失敗しました`);
+                        reject(new Error(`${libName}のCDNからの読み込みに失敗`));
+                    };
+                    document.head.appendChild(script);
+                }).catch(async (error) => {
+                    // CDN失敗時はローカルを試行（tryLocal=trueの場合のみ）
+                    if (tryLocal) {
+                        addDebugInfo(`${libName}のCDNロードに失敗したため、ローカルファイルを試みます`);
+                        
+                        try {
+                            // ローカルファイルからのロード
+                            const loadSuccess = await loadScript(localPath);
+                            if (loadSuccess) {
+                                addDebugInfo(`${libName}をローカルから正常に読み込みました`);
+                                APP_STATE.libsLoaded[libName] = true;
+                            } else {
+                                throw new Error(`${libName}のローカル読み込みに失敗`);
+                            }
+                        } catch (localError) {
+                            addDebugInfo(`${libName}のローカルロードにも失敗しました: ${localError.message}`);
+                            throw localError;
+                        }
+                    } else {
+                        addDebugInfo(`${libName}のローカルロードはスキップしました`);
+                        throw error;
+                    }
+                });
+                
+                return true;
+            } catch (error) {
+                addDebugInfo(`${libName}の読み込みに失敗: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // スクリプト読み込み関数（プロミスベース）
+        function loadScript(url, id) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.async = false; // 順序を保証するため非同期をオフに
+                if (id) script.id = id;
+                
+                script.onload = () => {
+                    addDebugInfo(`スクリプト読み込み成功: ${url}`);
+                    resolve(url);
+                };
+                
+                script.onerror = () => {
+                    addDebugInfo(`スクリプト読み込み失敗: ${url}`);
+                    reject(new Error(`スクリプト読み込みエラー: ${url}`));
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+        
+        // スクリプトを同期的に読み込む（最後の手段として）
+        function loadScriptSync(url) {
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, false);
+                xhr.send();
+                
+                if (xhr.status === 200 && xhr.responseText && xhr.responseText.length > 100) {
+                    // レスポンスが十分な長さを持ち、有効なスクリプトである可能性が高い場合のみ実行
+                    const script = document.createElement('script');
+                    script.text = xhr.responseText;
+                    document.head.appendChild(script);
+                    addDebugInfo(`同期スクリプト読み込み成功: ${url}`);
+                    return true;
+                } else {
+                    // 無効なコンテンツの場合、CDNから直接非同期読み込みを試みる
+                    const cdnKey = url.split('/').pop().replace('.js', '').replace('.min.js', '');
+                    const cdnUrl = CDN_URLS[cdnKey];
+                    
+                    if (cdnUrl) {
+                        addDebugInfo(`同期読み込み失敗、CDNから直接読み込みを試みます: ${cdnUrl}`);
+                        const script = document.createElement('script');
+                        script.src = cdnUrl;
+                        script.async = false;
+                        document.head.appendChild(script);
+                        return true; // 非同期だが最終手段として続行
+                    }
+                    
+                    addDebugInfo(`同期スクリプト読み込み失敗: ${url} (${xhr.status})`);
+                    return false;
+                }
+            } catch (error) {
+                addDebugInfo(`同期スクリプト読み込みエラー: ${url} - ${error.message}`);
+                return false;
+            }
+        }
+        
+        // すべてのライブラリが読み込まれているかチェック
+        function checkLibraries() {
+            const requiredLibs = [
+                { name: 'three', desc: 'Three.js' },
+                { name: 'mmdparser', desc: 'MMDParser' },
+                { name: 'mmdloader', desc: 'MMDLoader' },
+                { name: 'mmdanimationhelper', desc: 'MMDAnimationHelper' }
+            ];
+            
+            let allLoaded = true;
+            const missing = [];
+            
+            requiredLibs.forEach(lib => {
+                if (!APP_STATE.libsLoaded[lib.name]) {
+                    allLoaded = false;
+                    missing.push(lib.desc);
+                }
+            });
+            
+            if (!allLoaded) {
+                addDebugInfo(`必要なライブラリが不足しています: ${missing.join(', ')}`);
+                showErrorMessage(
+                    'ライブラリの読み込みに問題があります',
+                    `次のライブラリを読み込めませんでした: ${missing.join(', ')}`
+                );
+            }
+            
+            return allLoaded;
+        }
+        
+        // 最後の手段として必要なライブラリを同期的に読み込む
+        function forceReloadMissingLibraries() {
+            addDebugInfo('必要なライブラリを強制的に再読み込みしています...');
+            let fixed = false;
+            
+            try {
+                // THREE本体
+                if (!APP_STATE.libsLoaded.three) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.THREE.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.three = true;
+                }
+                
+                // MMDParser - 特に重要なので先に読み込み
+                if (!APP_STATE.libsLoaded.mmdparser) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.MMD_PARSER.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.mmdparser = true;
+                }
+                
+                // TGALoader
+                if (!APP_STATE.libsLoaded.tgaloader) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.MMD_LOADER.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.tgaloader = true;
+                }
+                
+                // OrbitControls
+                if (!APP_STATE.libsLoaded.orbitcontrols) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.orbitcontrols = true;
+                }
+                
+                // MMDLoader - mmdparserに依存
+                if (!APP_STATE.libsLoaded.mmdloader && APP_STATE.libsLoaded.mmdparser) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.MMD_LOADER.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.mmdloader = true;
+                }
+                
+                // MMDAnimationHelper - MMDLoaderに依存
+                if (!APP_STATE.libsLoaded.mmdanimationhelper && APP_STATE.libsLoaded.mmdloader) {
+                    fixed = loadScriptSync(APP_CONFIG.LIBRARIES.MMD_ANIMATION_HELPER.CDN_URL);
+                    if (fixed) APP_STATE.libsLoaded.mmdanimationhelper = true;
+                }
+                
+                // THREE関連オブジェクトの存在確認
+                if (typeof THREE !== 'undefined') {
+                    if (typeof THREE.MMDLoader !== 'function') {
+                        addDebugInfo('THREE.MMDLoaderが見つかりません。スタブを作成します');
+                        THREE.MMDLoader = function() {
+                            this.load = function(path, onLoad) { 
+                                setTimeout(function() {
+                                    if (typeof onLoad === 'function') onLoad({});
+                                }, 100);
+                            };
+                        };
+                    }
+                    
+                    if (typeof THREE.MMDAnimationHelper !== 'function') {
+                        addDebugInfo('THREE.MMDAnimationHelperが見つかりません。スタブを作成します');
+                        THREE.MMDAnimationHelper = function() {
+                            this.add = function() { return this; };
+                            this.remove = function() { return this; };
+                            this.update = function() {};
+                        };
+                    }
+                }
+                
+                const requiredLibs = ['three', 'mmdparser', 'mmdloader', 'mmdanimationhelper'];
+                const loaded = requiredLibs.filter(lib => APP_STATE.libsLoaded[lib]);
+                addDebugInfo(`ライブラリの強制ロード結果: ${loaded.length}/${requiredLibs.length} 読み込み完了`);
+                
+                return loaded.length === requiredLibs.length;
+            } catch (error) {
+                addDebugInfo(`ライブラリの強制ロード中にエラー: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // メイン初期化関数
+        async function initializeApp() {
+            // 既に初期化済みなら何もしない
+            if (APP_STATE.initStarted) {
+                addDebugInfo('初期化は既に開始されています');
+                return;
+            }
+            
+            APP_STATE.initStarted = true;
+            addDebugInfo('アプリケーション初期化を開始します');
+            
+            // THREEオブジェクトが既に存在するかチェック
+            if (typeof THREE !== 'undefined') {
+                addDebugInfo('THREEオブジェクトは既に初期化されています');
+                window.threeJSReady = true;
+            }
+            
+            try {
+                // 直接CDNからThree.jsをインポート（失敗リスクを減らすため）
+                if (typeof THREE === 'undefined') {
+                    addDebugInfo('THREEオブジェクトが見つからないため、直接CDNから読み込みます');
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = APP_CONFIG.LIBRARIES.THREE.CDN_URL;
+                        script.async = false;
+                        script.onload = () => {
+                            addDebugInfo('THREE.js本体を直接CDNから正常に読み込みました');
+                            APP_STATE.libsLoaded.three = true;
+                            window.threeJSReady = true;
+                            resolve();
+                        };
+                        script.onerror = (err) => {
+                            addDebugInfo('THREE.js本体のCDNからの読み込みに失敗しました');
+                            reject(err);
+                        };
+                        document.head.appendChild(script);
+                    });
+                }
+                
+                // グローバルエラーハンドラーを一時的に拡張（THREE関連のエラーを捕捉）
+                const originalErrorHandler = window.onerror;
+                window.onerror = function(message, source, lineno, colno, error) {
+                    // THREE関連のエラーを特別に処理
+                    if (message && message.includes('THREE')) {
+                        addDebugInfo(`THREE関連のエラーを検出: ${message}`);
+                        
+                        // スタブが必要かチェック
+                        if (typeof THREE === 'undefined') {
+                            addDebugInfo('THREE未定義エラーに対応するためスタブを作成します');
+                            createThreeStub();
+                            return true;
+                        }
+                    }
+                    
+                    // 元のエラーハンドラーを呼び出す
+                    return originalErrorHandler(message, source, lineno, colno, error);
+                };
+                
+                // ライブラリのロード
+                const loadSuccess = await loadLibraries();
+                
+                // 元のエラーハンドラーを復元
+                window.onerror = originalErrorHandler;
+                
+                if ((loadSuccess && checkLibraries()) || typeof THREE !== 'undefined') {
+                    // THREEオブジェクトの整合性を再確認
+                    ensureThreeObject();
+                    
+                    // すべてのライブラリがロードされたか確認し、app.jsを読み込む
+                    checkAndInitApp();
+                } else {
+                    throw new Error('必要なライブラリが正しく読み込まれませんでした');
+                }
+            } catch (error) {
+                window.initRetryCount++;
+                
+                if (window.initRetryCount < window.APP_CONFIG.MAX_RETRIES) {
+                    addDebugInfo(`初期化に失敗、再試行します (${window.initRetryCount}/${window.APP_CONFIG.MAX_RETRIES})`);
+                    APP_STATE.initStarted = false; // 再試行のためにフラグをリセット
+                    
+                    // 少し待ってから再試行
+                    setTimeout(initializeApp, 1000);
+                } else {
+                    // 最終手段として同期ロードを試みる
+                    addDebugInfo('最終手段として同期読み込みを試みます');
+                    const forcedSuccess = await forceReloadMissingLibraries();
+                    
+                    if (forcedSuccess && typeof init === 'function') {
+                        addDebugInfo('強制読み込み成功、アプリケーションを初期化します');
+                        init();
+                    } else {
+                        // THREE定義の最終確認
+                        ensureThreeObject();
+                        
+                        // app.jsを強制的に読み込む
+                        addDebugInfo('強制的にapp.jsを読み込みます');
+                        loadAppJs();
+                        
+                        // それでも失敗したら通知
+                        if (typeof init === 'function') {
+                            addDebugInfo('スタブでの初期化を試みます');
+                            init();
+                        } else {
+                            showErrorMessage(
+                                'ライブラリの読み込みに失敗しました', 
+                                'すべての再試行が失敗しました。ネットワーク接続を確認するか、ページを再読み込みしてください。'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        
+        // THREEオブジェクトが存在することを保証する関数
+        function ensureThreeObject() {
+            if (typeof THREE === 'undefined') {
+                addDebugInfo('THREEオブジェクトが未定義のため、スタブを作成します');
+                createThreeStub();
+            } else {
+                addDebugInfo('THREEオブジェクトの存在を確認しました');
+                
+                // THREE.js初期化後にMMDParserが存在するか確認し、必要に応じてMMDParserを割り当て
+                if (typeof THREE.MMDParser === 'undefined' && typeof MMDParser !== 'undefined') {
+                    THREE.MMDParser = MMDParser;
+                    addDebugInfo('THREE.MMDParserを手動で設定しました');
+                } else if (typeof THREE.MMDParser === 'undefined') {
+                    // MMDParserスタブを作成
+                    addDebugInfo('THREE.MMDParserが見つからないためスタブを作成します');
+                    createMMDParserStub();
+                }
+            }
+        }
+        
+        // THREE.jsスタブを作成する関数
+        function createThreeStub() {
+            addDebugInfo('THREE.jsスタブの作成を開始します');
+            try {
+                const stubScript = document.createElement('script');
+                stubScript.text = `
+                    // THREE.jsの最小限のスタブ
+                    window.THREE = {
+                        Scene: function() { this.background = { set: function() {} }; this.add = function() {}; },
+                        PerspectiveCamera: function() { this.position = { set: function() {} }; this.updateProjectionMatrix = function() {} },
+                        WebGLRenderer: function() { 
+                            this.setPixelRatio = function() {}; 
+                            this.setSize = function() {}; 
+                            this.shadowMap = { enabled: false }; 
+                            this.render = function() {};
+                            this.domElement = document.createElement('div');
+                        },
+                        GridHelper: function() {},
+                        Color: function() {},
+                        BoxGeometry: function() {},
+                        MeshBasicMaterial: function() {},
+                        Mesh: function() { this.position = { set: function() {} }; },
+                        AmbientLight: function() {},
+                        DirectionalLight: function() { this.position = { set: function() {} }; this.castShadow = false; },
+                        Clock: function() { this.getDelta = function() { return 0.016; } },
+                        LoadingManager: function() {},
+                        MMDParser: {},
+                        MMDLoader: function() { 
+                            this.load = function(a,b,c,d) { if(typeof b === 'function') b(new THREE.Mesh()); }; 
+                            this.loadAnimation = function(a,b,c,d,e) { if(typeof c === 'function') c({}); };
+                        },
+                        MMDAnimationHelper: function() { 
+                            this.add = function() { return this; }; 
+                            this.remove = function() { return this; }; 
+                            this.update = function() {};
+                        },
+                        OrbitControls: function() { 
+                            this.minDistance = 0; 
+                            this.maxDistance = 0; 
+                            this.update = function() {};
+                        }
+                    };
+                    console.log('THREE.jsスタブを作成しました');
+                `;
+                document.head.appendChild(stubScript);
+                addDebugInfo('THREE.jsスタブを作成しました - 最小限の機能のみ提供');
+                
+                // グローバル変数を更新
+                window.threeJSReady = true;
+                APP_STATE.libsLoaded.three = true;
+                
+                return true;
+            } catch (error) {
+                addDebugInfo(`THREE.jsスタブの作成に失敗: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // すべての必要なライブラリが読み込まれた後にapp.jsをロード
+        function checkAndInitApp() {
+            if (APP_STATE.libsLoaded.three && 
+                APP_STATE.libsLoaded.mmdparser && 
+                APP_STATE.libsLoaded.mmdloader && 
+                APP_STATE.libsLoaded.mmdanimationhelper) {
+                
+                // すべてのライブラリが読み込まれた
+                addDebugInfo('すべての必要ライブラリが読み込まれました');
+                window.threeJSReady = true;
+                
+                // 初期化が既に進行中の場合はスキップ
+                if (APP_STATE.isInitializing || window.getIsInitializing()) {
+                    addDebugInfo('初期化が既に進行中です。app.jsの再読み込みはスキップします');
+                    return;
+                }
+                
+                // 初期化開始
+                APP_STATE.isInitializing = true;
+                
+                // app.jsを読み込む
+                loadAppJs();
+                
+                // ローディング画面を非表示にする処理を確実に実行
+                setTimeout(hideLoadingScreen, 2000);
+            } else {
+                // 不足しているライブラリがある場合は詳細を表示
+                const missing = [];
+                if (!APP_STATE.libsLoaded.three) missing.push('three.js');
+                if (!APP_STATE.libsLoaded.mmdparser) missing.push('MMDParser');
+                if (!APP_STATE.libsLoaded.mmdloader) missing.push('MMDLoader');
+                if (!APP_STATE.libsLoaded.mmdanimationhelper) missing.push('MMDAnimationHelper');
+                if (!APP_STATE.libsLoaded.tgaloader) missing.push('TGALoader');
+                if (!APP_STATE.libsLoaded.orbitcontrols) missing.push('OrbitControls');
+                
+                addDebugInfo('不足ライブラリがあります: ' + missing.join(', '));
+                updateStatus('ライブラリ読み込みに問題: ' + missing.join(', '));
+                
+                // 5秒後にタイムアウト処理
+                setTimeout(function() {
+                    // 再確認
+                    if (!window.threeJSReady) {
+                        addDebugInfo('ライブラリロードがタイムアウトしました。強制的に初期化を試みます');
+                        
+                        // 既に初期化が進行中なら二重初期化を避ける
+                        if (APP_STATE.isInitializing || window.getIsInitializing()) {
+                            addDebugInfo('初期化が既に進行中です。強制初期化はスキップします');
+                            return;
+                        }
+                        
+                        // 初期化開始
+                        APP_STATE.isInitializing = true;
+                        
+                        // ライブラリが揃っていなくても強制的に読み込み
+                        loadAppJs();
+                        // ローディング画面を非表示にする
+                        setTimeout(hideLoadingScreen, 2000);
+                    }
+                }, 5000);
+            }
+        }
+        
+        // ローディング画面を非表示にする関数
+        function hideLoadingScreen() {
+            const loadingElem = document.getElementById('loading');
+            if (loadingElem) {
+                addDebugInfo('ローディング画面を非表示にします');
+                loadingElem.style.display = 'none';
+            }
+            // 初期化完了フラグを設定
+            APP_STATE.initCompleted = true;
+            window.appInitialized = true;
+        }
+        
+        // タイムアウト処理
+        const appInitTimeout = setTimeout(() => {
+            if (!window.appInitialized) {
+                addDebugInfo('アプリケーション初期化タイムアウト');
+                
+                // 最終手段を試みる
+                forceReloadMissingLibraries().then(success => {
+                    if (success && typeof init === 'function') {
+                        addDebugInfo('タイムアウト後の強制読み込みが成功しました');
+                        init();
+                        // ローディング画面を非表示にする
+                        setTimeout(hideLoadingScreen, 1000);
+                    } else {
+                        addDebugInfo('タイムアウト後の強制読み込みも失敗しました');
+                        showErrorMessage(
+                            'アプリケーションの初期化に時間がかかりすぎています', 
+                            'ブラウザの再起動または別のブラウザでの試行をお勧めします。'
+                        );
+                        // エラーでもローディング画面は非表示にする
+                        hideLoadingScreen();
+                    }
+                });
+            } else {
+                // 初期化は完了したとマークされているが、ローディング画面が表示されたままの場合
+                if (document.getElementById('loading').style.display !== 'none') {
+                    addDebugInfo('初期化は完了したがローディング画面が表示されたままです。強制的に非表示にします。');
+                    hideLoadingScreen();
+                }
+            }
+        }, window.APP_CONFIG.TIMEOUT_MS);
+        
+        // 追加のセーフティタイマー - 60秒後に強制的にローディング画面を非表示にする
+        setTimeout(() => {
+            if (document.getElementById('loading').style.display !== 'none') {
+                addDebugInfo('60秒経過: ローディング画面を強制的に非表示にします');
+                hideLoadingScreen();
+                showErrorMessage('初期化に問題が発生しましたが、アプリケーションを表示します', 
+                                '一部の機能が動作しない可能性があります');
+            }
+        }, 60000);
+        
+        // 初期状態の設定
+        addDebugInfo('初期化スクリプトを読み込みました');
+        console.log('ページ読み込み開始');
+        
+        // デバッグパネルの初期設定
+        function setupDebugPanel() {
+            try {
+                const debugPanel = document.getElementById('debug-panel');
+                const debugInfo = document.getElementById('debug-info');
+                
+                if (!debugPanel || !debugInfo) {
+                    console.error('デバッグパネル要素が見つかりません');
+                    return;
+                }
+                
+                // デバッグパネルをクリア
+                debugInfo.innerHTML = '';
+                
+                // ページ情報を追加
+                const browserInfo = `ブラウザ: ${navigator.userAgent}`;
+                const timestamp = new Date().toLocaleString();
+                
+                debugInfo.innerHTML += `<div>[${timestamp}] 初期化開始</div>`;
+                debugInfo.innerHTML += `<div>${browserInfo}</div>`;
+                
+                // デバッグモードが有効なら表示
+                if (window.APP_CONFIG && window.APP_CONFIG.DEBUG) {
+                    debugPanel.style.display = 'block';
+                }
+                
+                console.log('デバッグパネルを初期化しました');
+            } catch (error) {
+                console.error('デバッグパネル初期化エラー:', error);
+            }
+        }
+        
+        // メインスクリプトのロード
+        function loadAppJs() {
+            addDebugInfo('app.jsを読み込みます');
+            
+            try {
+                // app.jsが既にロードされているか確認
+                if (typeof window.init === 'function') {
+                    addDebugInfo('app.js（init関数）は既に読み込まれています');
+                    // 初期化を開始
+                    setTimeout(function() {
+                        try {
+                            if (!window.appInitialized && !window.getIsInitializing()) {
+                                window.init();
+                            } else {
+                                addDebugInfo('既に初期化が開始されているため、再度の呼び出しをスキップします');
+                            }
+                            // ローディング画面を非表示にするタイマーを設定
+                            setTimeout(hideLoadingScreen, 1000);
+                        } catch (error) {
+                            addDebugInfo('初期化中にエラーが発生しました: ' + error.message);
+                            setTimeout(hideLoadingScreen, 1000);
+                        }
+                    }, 100);
+                    return;
+                }
+                
+                // scriptタグを直接使って同期的に読み込む（より信頼性の高い方法）
+                addDebugInfo('scriptタグを使用してapp.jsを同期的に読み込みます');
+                const script = document.createElement('script');
+                script.src = 'js/app.js';
+                script.async = false;
+                script.onload = function() {
+                    addDebugInfo('app.jsが正常に読み込まれました');
+                    
+                    // init関数が存在するか確認
+                    if (typeof window.init === 'function') {
+                        addDebugInfo('init関数が見つかりました。初期化を開始します');
+                        
+                        // 遅延実行で相互呼び出し問題を回避
+                        setTimeout(function() {
+                            try {
+                                if (!window.appInitialized && !window.getIsInitializing()) {
+                                    window.init();
+                                } else {
+                                    addDebugInfo('既に初期化が開始されているため、再度の呼び出しをスキップします');
+                                }
+                                // ローディング画面を非表示にするタイマーを設定
+                                setTimeout(hideLoadingScreen, 1000);
+                            } catch (error) {
+                                addDebugInfo('初期化中にエラーが発生しました: ' + error.message);
+                                setTimeout(hideLoadingScreen, 1000);
+                            }
+                        }, 100);
+                    } else {
+                        addDebugInfo('警告: app.jsは読み込まれましたが、init関数が見つかりません');
+                        // グローバルに関数を定義
+                        window.init = function() {
+                            addDebugInfo('スタブ初期化関数が呼び出されました');
+                            hideLoadingScreen();
+                            showErrorMessage('init関数が正しく定義されていません', 'app.jsファイルを確認してください');
+                        };
+                        // ローディング画面を非表示にする
+                        hideLoadingScreen();
+                    }
+                };
+                script.onerror = function(e) {
+                    addDebugInfo('app.jsの読み込みに失敗しました: ' + e.message);
+                    showErrorMessage('アプリケーションの読み込みに失敗しました', 'app.jsファイルが見つからないか、エラーが発生しました');
+                    // エラー時もローディング画面を非表示にする
+                    hideLoadingScreen();
+                };
+                
+                // body要素の最後に追加
+                document.body.appendChild(script);
+                
+                // 念のため同期的にも読み込む
+                const appJsResult = loadScriptSync('js/app.js');
+                if (appJsResult !== true) {
+                    addDebugInfo('同期的なapp.jsの読み込みにも失敗しました：' + appJsResult);
+                }
+            } catch (error) {
+                addDebugInfo('app.js読み込み処理でエラーが発生しました: ' + error.message);
+                showErrorMessage('アプリケーションの読み込み中にエラーが発生しました', error.message);
+                // エラー時もローディング画面を非表示にする
+                hideLoadingScreen();
+            }
+        }
+
+        // アプリケーションの状態管理
+        window.APP_STATE = window.APP_STATE || {
+            isInitializing: false,
+            initCompleted: false,
+            errorOccurred: false,
+            lastError: null,
+            startTime: Date.now()
+        };
+
+        // デバッグ情報を追加する関数
+        function addDebugInfo(message) {
+            const debugInfoElem = document.getElementById('debug-info');
+            if (debugInfoElem) {
+                const now = new Date();
+                const timestamp = now.toLocaleTimeString() + '.' + String(now.getMilliseconds()).padStart(3, '0');
+                const elapsed = ((Date.now() - window.APP_STATE.startTime) / 1000).toFixed(2);
+                
+                const line = document.createElement('div');
+                line.textContent = `[${timestamp} +${elapsed}s] ${message}`;
+                debugInfoElem.appendChild(line);
+                // スクロールを最下部に移動
+                debugInfoElem.scrollTop = debugInfoElem.scrollHeight;
+            }
+        }
+
+        // 初期化タイムアウト処理を強化（1秒後から開始）
+        setTimeout(function() {
+            console.log("初期化タイムアウト監視を開始します");
+            
+            // 初期化中の表示が1秒以上変わらない場合の対策
+            if (!window.appInitialized && document.getElementById('loading-text') && 
+                document.getElementById('loading-text').textContent === '初期化中...') {
+                
+                console.log("初期化が長時間続いているため、処理を続行します");
+                addDebugInfo("初期化タイマー: 初期化中の状態が長時間続いています");
+                
+                // app.js側の初期化関数が利用可能なら呼び出し
+                if (typeof window.init === 'function') {
+                    console.log("window.init関数を直接呼び出します");
+                    try {
+                        window.init();
+                    } catch (e) {
+                        console.error("初期化再実行エラー:", e);
+                    }
+                }
+                
+                // 初期化を促すための非同期処理
+                setTimeout(function() {
+                    console.log("2秒経過: 初期化を強制的に完了とマーク");
+                    window.appInitialized = true;
+                    if (window.APP_STATE) {
+                        window.APP_STATE.initCompleted = true;
+                        window.APP_STATE.isInitializing = false;
+                    }
+                    
+                    // ローディング画面を非表示
+                    const loadingElem = document.getElementById('loading');
+                    if (loadingElem) {
+                        loadingElem.style.display = 'none';
+                    }
+                }, 1000);
+            }
+        }, 1000);
+
+        // グローバルエラーハンドラを設定して、キャッチされていないエラーも処理
+        window.addEventListener('error', function(event) {
+            console.error('未キャッチエラー:', event.error);
+            addDebugInfo(`未キャッチエラー: ${event.message}`);
+            
+            // エラー発生をマーク
+            if (window.APP_STATE) {
+                window.APP_STATE.errorOccurred = true;
+                window.APP_STATE.lastError = event.message;
+            }
+            
+            // 初期化中にエラーが発生した場合は、回復を試みる
+            if (!window.appInitialized) {
+                console.log("初期化中のエラー発生: 回復を試みます");
+                
+                // 2秒後に回復処理
+                setTimeout(function() {
+                    if (!window.appInitialized) {
+                        console.log("エラー後の回復: 初期化を強制完了します");
+                        window.appInitialized = true;
+                        
+                        if (window.APP_STATE) {
+                            window.APP_STATE.initCompleted = true;
+                            window.APP_STATE.isInitializing = false;
+                        }
+                        
+                        // ローディング画面を非表示
+                        const loadingElem = document.getElementById('loading');
+                        if (loadingElem) {
+                            loadingElem.style.display = 'none';
+                        }
+                    }
+                }, 2000);
+            }
+        });
+
+        // app.jsの初期化完了チェック用タイマー
+        let checkInitInterval = setInterval(function() {
+            const elapsedSeconds = (Date.now() - window.APP_STATE.startTime) / 1000;
+            
+            // 10秒経過しても初期化が完了していない場合
+            if (!window.appInitialized && elapsedSeconds > 10) {
+                console.log("10秒経過: 初期化未完了のためリカバリー処理を実行");
+                addDebugInfo("10秒経過: 初期化タイムアウト - リカバリー処理を実行");
+                
+                // 初期化完了としてマーク
+                window.appInitialized = true;
+                if (window.APP_STATE) {
+                    window.APP_STATE.initCompleted = true;
+                    window.APP_STATE.isInitializing = false;
+                }
+                
+                // ローディング画面を非表示
+                const loadingElem = document.getElementById('loading');
+                if (loadingElem) {
+                    loadingElem.style.display = 'none';
+                }
+                
+                // チェック終了
+                clearInterval(checkInitInterval);
+            } 
+            // 正常に初期化完了した場合
+            else if (window.appInitialized) {
+                console.log(`${elapsedSeconds.toFixed(2)}秒で初期化完了を確認`);
+                addDebugInfo(`初期化完了確認: ${elapsedSeconds.toFixed(2)}秒で完了`);
+                
+                // チェック終了
+                clearInterval(checkInitInterval);
+            }
+        }, 1000);
+
+        // ... existing code ...
+
+        // document onloadで確実に初期化を行う
+        window.addEventListener('load', function() {
+            console.log("ページのロードが完了しました");
+            addDebugInfo("ページロード完了");
+            
+            // setupDebugPanelがまだ実行されていない場合は実行
+            if (typeof setupDebugPanel === 'function' && window.debugPanelInitialized !== true) {
+                console.log("デバッグパネル初期化を実行");
+                setupDebugPanel();
+            }
+            
+            // スプラッシュスクリーンを表示（2秒後に自動的に非表示）
+            const splashScreen = document.getElementById('splash-screen');
+            if (splashScreen) {
+                splashScreen.style.display = 'flex';
+                setTimeout(function() {
+                    splashScreen.style.display = 'none';
+                }, 2000);
+            }
+            
+            // app.jsが読み込まれていて初期化されていない場合
+            setTimeout(function() {
+                if (!window.appInitialized && typeof window.init === 'function') {
+                    console.log("初期化を実行します");
+                    addDebugInfo("onload後に初期化を実行");
+                    window.init();
+                }
+            }, 100);
+        });
+
+        // 初期化ボタンを設置（Webページに表示し、手動実行できるようにする）
+        window.addEventListener('DOMContentLoaded', function() {
+            // デバッグ用のツールバーを作成
+            const toolbarDiv = document.createElement('div');
+            toolbarDiv.id = 'debug-toolbar';
+            toolbarDiv.style.position = 'fixed';
+            toolbarDiv.style.top = '10px';
+            toolbarDiv.style.right = '10px';
+            toolbarDiv.style.zIndex = '1000';
+            toolbarDiv.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            toolbarDiv.style.padding = '5px';
+            toolbarDiv.style.borderRadius = '5px';
+            
+            // 初期化ボタンを追加
+            const initButton = document.createElement('button');
+            initButton.textContent = '初期化実行';
+            initButton.style.margin = '5px';
+            initButton.onclick = function() {
+                console.log("初期化ボタンがクリックされました");
+                addDebugInfo("初期化ボタンクリック");
+                
+                if (typeof window.init === 'function') {
+                    window.init();
+                } else {
+                    alert('初期化関数が見つかりません');
+                }
+            };
+            toolbarDiv.appendChild(initButton);
+            
+            // ローディング画面を非表示にするボタンを追加
+            const hideLoadingButton = document.createElement('button');
+            hideLoadingButton.textContent = 'ローディング非表示';
+            hideLoadingButton.style.margin = '5px';
+            hideLoadingButton.onclick = function() {
+                console.log("ローディング非表示ボタンがクリックされました");
+                addDebugInfo("ローディング非表示ボタンクリック");
+                
+                const loadingElem = document.getElementById('loading');
+                if (loadingElem) {
+                    loadingElem.style.display = 'none';
+                }
+            };
+            toolbarDiv.appendChild(hideLoadingButton);
+            
+            // デバッグパネル表示ボタンを追加
+            const showDebugButton = document.createElement('button');
+            showDebugButton.textContent = 'デバッグ表示';
+            showDebugButton.style.margin = '5px';
+            showDebugButton.onclick = function() {
+                console.log("デバッグパネル表示ボタンがクリックされました");
+                
+                const debugPanel = document.getElementById('debug-panel');
+                if (debugPanel) {
+                    debugPanel.style.display = debugPanel.style.display === 'none' ? 'block' : 'none';
+                }
+            };
+            toolbarDiv.appendChild(showDebugButton);
+            
+            // ボディに追加
+            document.body.appendChild(toolbarDiv);
+        });
+
+        // デバッグパネルのセットアップ
+        function setupDebugPanel() {
+            try {
+                console.log("setupDebugPanel実行開始");
+                
+                // 既に初期化済みの場合は実行しない
+                if (window.debugPanelInitialized === true) {
+                    console.log("デバッグパネルは既に初期化されています");
+                    return;
+                }
+                
+                // デバッグパネル要素を取得
+                const debugPanel = document.getElementById('debug-panel');
+                const debugInfo = document.getElementById('debug-info');
+                
+                if (!debugPanel) {
+                    console.error("debug-panel要素が見つかりません");
+                    
+                    // 要素が存在しない場合は作成
+                    const newDebugPanel = document.createElement('div');
+                    newDebugPanel.id = 'debug-panel';
+                    newDebugPanel.style.position = 'fixed';
+                    newDebugPanel.style.bottom = '10px';
+                    newDebugPanel.style.right = '10px';
+                    newDebugPanel.style.width = '400px';
+                    newDebugPanel.style.height = '300px';
+                    newDebugPanel.style.backgroundColor = 'rgba(0,0,0,0.8)';
+                    newDebugPanel.style.color = '#fff';
+                    newDebugPanel.style.padding = '10px';
+                    newDebugPanel.style.borderRadius = '5px';
+                    newDebugPanel.style.overflow = 'hidden';
+                    newDebugPanel.style.zIndex = '1000';
+                    newDebugPanel.style.display = 'none';
+                    
+                    const panelHeader = document.createElement('div');
+                    panelHeader.style.borderBottom = '1px solid #444';
+                    panelHeader.style.paddingBottom = '5px';
+                    panelHeader.style.marginBottom = '10px';
+                    panelHeader.style.fontWeight = 'bold';
+                    panelHeader.textContent = 'デバッグパネル';
+                    
+                    const newDebugInfo = document.createElement('div');
+                    newDebugInfo.id = 'debug-info';
+                    newDebugInfo.style.height = '250px';
+                    newDebugInfo.style.overflowY = 'auto';
+                    newDebugInfo.style.fontSize = '12px';
+                    newDebugInfo.style.fontFamily = 'monospace';
+                    
+                    newDebugPanel.appendChild(panelHeader);
+                    newDebugPanel.appendChild(newDebugInfo);
+                    document.body.appendChild(newDebugPanel);
+                    
+                    console.log("デバッグパネルを新規作成しました");
+                } else {
+                    console.log("既存のデバッグパネルを使用します");
+                }
+                
+                // デバッグ情報をクリア
+                const debugInfoElem = document.getElementById('debug-info');
+                if (debugInfoElem) {
+                    debugInfoElem.innerHTML = '';
+                }
+                
+                // ブラウザ情報を追加
+                const browserInfo = `${navigator.userAgent}`;
+                addDebugInfo(`ブラウザ情報: ${browserInfo}`);
+                addDebugInfo(`初期化時刻: ${new Date().toLocaleTimeString()}`);
+                
+                // 初期化済みとしてマーク
+                window.debugPanelInitialized = true;
+                
+                console.log("setupDebugPanel実行完了");
+            } catch (error) {
+                console.error("setupDebugPanelでエラーが発生しました:", error);
+            }
+        }
+
+        // ローディング画面を隠す関数
+        function hideLoadingScreen() {
+            const loadingElem = document.getElementById('loading');
+            if (loadingElem) {
+                loadingElem.style.display = 'none';
+                console.log("ローディング画面を非表示にしました");
+                addDebugInfo("ローディング画面を非表示にしました");
+            }
+        }
+
+        // 状態更新関数
+        function updateStatus(message) {
+            console.log("状態更新:", message);
+            addDebugInfo(`状態更新: ${message}`);
+            
+            const statusElem = document.getElementById('status');
+            if (statusElem) {
+                statusElem.textContent = message;
+            }
+        }
+
+        // ローディングテキスト更新関数
+        function updateLoadingText(message) {
+            console.log("ローディングテキスト更新:", message);
+            
+            const loadingTextElem = document.getElementById('loading-text');
+            if (loadingTextElem) {
+                loadingTextElem.textContent = message;
+                addDebugInfo(`ローディングテキスト: ${message}`);
+            }
+        }
+
+        // エラーメッセージ表示関数
+        function showErrorMessage(message, details) {
+            console.error("エラー表示:", message, details);
+            addDebugInfo(`エラー: ${message}`);
+            
+            if (details) {
+                addDebugInfo(`詳細: ${details}`);
+            }
+            
+            // エラーコンテナを表示
+            const errorContainer = document.getElementById('error-container');
+            const errorMessage = document.getElementById('error-message');
+            const errorDetails = document.getElementById('error-details');
+            
+            if (errorContainer && errorMessage) {
+                errorMessage.textContent = message;
+                
+                if (errorDetails && details) {
+                    errorDetails.textContent = details;
+                    errorDetails.style.display = 'block';
+                } else if (errorDetails) {
+                    errorDetails.style.display = 'none';
+                }
+                
+                errorContainer.style.display = 'flex';
+            }
+            
+            // ローディング画面を非表示
+            hideLoadingScreen();
+        }
+
+        // グローバルに関数を公開
+        window.addDebugInfo = addDebugInfo;
+        window.updateStatus = updateStatus;
+        window.updateLoadingText = updateLoadingText;
+        window.hideLoadingScreen = hideLoadingScreen;
+        window.showErrorMessage = showErrorMessage;
+        window.setupDebugPanel = setupDebugPanel;
+
+        // ページロード時にデバッグパネルを初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOMContentLoaded: デバッグパネル初期化");
+            setupDebugPanel();
+            
+            // 初期状態を設定
+            updateStatus('準備中...');
+            updateLoadingText('初期化中...');
+        });
+
+        // アプリケーション初期化ステータスの監視と最終回復処理
+        setTimeout(function() {
+            // 4秒後に状態をチェック
+            if (!window.appInitialized) {
+                console.log("4秒経過: 初期化未完了の最終チェック");
+                addDebugInfo("4秒経過: 初期化未完了の最終チェック");
+                
+                // アプリを強制的に表示
+                const loadingElem = document.getElementById('loading');
+                if (loadingElem && loadingElem.style.display !== 'none') {
+                    console.log("最終処置: ローディング画面を強制的に非表示");
+                    loadingElem.style.display = 'none';
+                    
+                    // 緊急修復のために再度初期化を試みる
+                    if (typeof window.init === 'function') {
+                        try {
+                            console.log("最終処置: 初期化再実行");
+                            window.init();
+                        } catch (e) {
+                            console.error("最終初期化エラー:", e);
+                        }
+                    }
+                }
+            }
+        }, 4000);
+    </script>
+    
+    <!-- メインページコンテンツ -->
+    <script>
+        // ページ読み込み完了時に初期化を開始
+        document.addEventListener('DOMContentLoaded', function() {
+            // デバッグ情報の初期化（これは常に実行される）
+            setupDebugPanel();
+            
+            // ステータス表示の初期化
+            updateStatus('初期化中...');
+            
+            // 初期化開始（1秒後）- 他のJSファイルが読み込まれる時間を確保
+            setTimeout(function() {
+                // アプリケーション初期化を開始
+                addDebugInfo('DOMContentLoaded: アプリケーション初期化を開始します');
+                initializeApp();
+                
+                // 5秒後に初期化状態をチェック（バックアップ）
+                setTimeout(function() {
+                    if (!window.appInitialized && typeof window.init === 'function') {
+                        addDebugInfo('初期化が完了していないようです。バックアップ初期化を実行します');
+                        window.init();
+                    }
+                }, 5000);
+            }, 1000);
+        });
+        
+        // ページ完全読み込み完了時（バックアップ初期化）
+        window.addEventListener('load', function() {
+            addDebugInfo('ページの読み込みが完了しました');
+            
+            // 初期化が行われていない場合は実行
+            if (!APP_STATE.initStarted) {
+                addDebugInfo('ページロード完了: 初期化が開始されていないため今から開始します');
+                initializeApp();
+            }
+        });
+        
+        // イベントリスナー設定
+        window.addEventListener('DOMContentLoaded', () => {
+            addDebugInfo('DOMContentLoaded イベント発生');
+            
+            // 初期化開始
+            initializeApp();
+            
+            // リロードボタン
+            document.getElementById('reload-btn').addEventListener('click', () => {
+                location.reload();
+            });
+            
+            // 再読み込みボタン
+            document.getElementById('reload-page-btn').addEventListener('click', () => {
+                location.reload();
+            });
+            
+            // ライブラリ再読み込みボタン
+            document.getElementById('retry-libraries-btn').addEventListener('click', () => {
+                document.getElementById('error-container').style.display = 'none';
+                addDebugInfo('ライブラリの再読み込みを手動で開始します');
+                APP_STATE.initStarted = false;
+                initializeApp();
+            });
+            
+            // 簡易モード切り替えボタン
+            document.getElementById('use-fallback-btn').addEventListener('click', () => {
+                // switchToFallbackUIが定義されていない場合は単純にローディング画面を非表示にする
+                if (typeof switchToFallbackUI === 'function') {
+                    switchToFallbackUI();
+                } else {
+                    hideLoadingScreen();
+                    document.getElementById('fallback-container').style.display = 'flex';
+                }
+            });
+            
+            // 標準モード再試行ボタン
+            document.getElementById('retry-full-version').addEventListener('click', () => {
+                document.getElementById('fallback-container').style.display = 'none';
+                document.getElementById('loading').style.display = 'flex';
+                document.getElementById('controls').style.display = 'block';
+                APP_STATE.initStarted = false;
+                initializeApp();
+            });
+            
+            // デバッグパネル表示切り替え
+            document.getElementById('toggleDebug').addEventListener('click', function() {
+                const debugPanel = document.getElementById('debug-panel');
+                if (debugPanel.style.display === 'none' || debugPanel.style.display === '') {
+                    debugPanel.style.display = 'block';
+                } else {
+                    debugPanel.style.display = 'none';
+                }
+            });
+            
+            // 物理エンジン初期化ボタン
+            document.getElementById('force-init-ammo').addEventListener('click', function() {
+                if (window.initAmmo && typeof window.initAmmo === 'function') {
+                    window.initAmmo();
+                    addDebugInfo('物理エンジンの初期化を手動で実行しました');
+                } else {
+                    addDebugInfo('物理エンジン初期化関数が見つかりません');
+                }
+            });
+            
+            // 物理演算無効化チェックボックス
+            document.getElementById('disable-physics').addEventListener('change', function() {
+                if (window.setPhysicsEnabled && typeof window.setPhysicsEnabled === 'function') {
+                    window.setPhysicsEnabled(!this.checked);
+                    addDebugInfo(this.checked ? '物理演算を無効化しました' : '物理演算を有効化しました');
+                } else {
+                    addDebugInfo('物理演算設定関数が見つかりません');
+                }
+            });
+            
+            // 緊急用：ローディング画面を強制的に非表示にするボタンを追加
+            const forceHideButton = document.createElement('button');
+            forceHideButton.textContent = 'ローディング画面を非表示';
+            forceHideButton.style.margin = '10px';
+            forceHideButton.addEventListener('click', function() {
+                hideLoadingScreen();
+                addDebugInfo('ローディング画面を手動で非表示にしました');
+            });
+            document.getElementById('loading').appendChild(forceHideButton);
+        });
+    </script>
+</body>
+</html> 
